@@ -10,19 +10,14 @@ import time
 import random
 
 
-EMAIL_REMETENTE = "lauren@dpaplus.com"
-EMAIL_SENHA = "svhdnjzithvgbdkh"
-EMAIL_DESTINATARIO = "laurencampregher@gmail.com"
-TELEFONE = "13996110880"
-ENDERECO = "Pasteur"
-
-# rodar com:
-#   source venv/bin/activate
-#   python3 scraper.py
+EMAIL_SENDER = "lauren@dpaplus.com"
+EMAIL_PASSWORD = "svhdnjzithvgbdkh"
+EMAIL_RECEIVER = "laurencampregher@gmail.com"
+PHONE = "13996110880"
+ADDRESS = "Pasteur"
 
 
-
-def espera_humana(min_sec=1, max_sec=3):
+def human_delay(min_sec=1, max_sec=3):
     time.sleep(random.uniform(min_sec, max_sec))
 
 def do_login():
@@ -39,7 +34,7 @@ def do_login():
         page.goto("https://www.ifood.com.br/entrar/celular")
         
         print("2 Preenchendo número de telefone...")
-        page.fill("input[name='phone']", TELEFONE)
+        page.fill("input[name='phone']", PHONE)
         
         print("3 Clicando em WhatsApp...")
         page.wait_for_selector("button:has-text('WhatsApp'):not([disabled])", state="visible")
@@ -49,10 +44,10 @@ def do_login():
         page.pause()
         
         print("Aguardando modal de endereços...")
-        page.wait_for_selector(f"text={ENDERECO}", state="visible")
+        page.wait_for_selector(f"text={ADDRESS}", state="visible")
         
-        print(f"Selecionando endereço '{ENDERECO}'...")
-        page.locator(f".btn-address__container:has-text('{ENDERECO}')").first.click()
+        print(f"Selecionando endereço '{ADDRESS}'...")
+        page.locator(f".btn-address__container:has-text('{ADDRESS}')").first.click()
         
         print("Aguardando página carregar...")
         page.wait_for_load_state("domcontentloaded")
@@ -64,168 +59,126 @@ def do_login():
         browser.close()
 
 
-def colorir_desconto(desconto):
-    negrito = "\033[1m"
+def color_discount(discount):
+    bold = "\033[1m"
     reset = "\033[0m"
     
-    if 24 <= desconto < 33:
-        return f"{negrito}\033[38;5;208m{desconto}%{reset}"
-    elif 33 <= desconto <= 40:
-        return f"{negrito}\033[31m{desconto}%{reset}"
-    elif desconto > 40:
-        return f"{negrito}\033[35m{desconto}%{reset}"
+    if 24 <= discount < 33:
+        return f"{bold}\033[38;5;208m{discount}%{reset}"
+    elif 33 <= discount <= 40:
+        return f"{bold}\033[31m{discount}%{reset}"
+    elif discount > 40:
+        return f"{bold}\033[35m{discount}%{reset}"
     else:
-        return f"{desconto}%"
+        return f"{discount}%"
 
 
-def scrape_ofertas(mercado_slug):
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=False,
-            executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-            slow_mo=random.randint(200, 500),
-            args=[
-                '--disable-blink-features=AutomationControlled'
-            ]
-        )
+def scrape_offers(page, store_name):
+    print("Busca mercado...")
+    page.fill("input[data-test-id='search-input-field']", store_name)
+    human_delay(1, 2)
+    page.press("input[data-test-id='search-input-field']", "Enter")
+    human_delay(2, 4)
+
+    print("Esperando resultados da busca...")
+    page.wait_for_selector(".merchant-list-v2__item-wrapper")
+
+    human_delay(1, 2)
+
+    print("Clicando no primeiro resultado...")
+    page.locator(".merchant-v2__link").first.click()
+
+    print("Esperando produtos carregarem...")
+    page.wait_for_selector(".product-card-wrapper", state="visible")
+
+    print("Coletando categorias...")
+    categories = page.locator(".aisle-menu__item__link__name").all()
+
+    categories_list = []
+    for i, cat in enumerate(categories):
+        category_name = cat.inner_text()
+        if i > 0:
+            categories_list.append(category_name)
+
+    print(f"Encontradas {len(categories_list)} categorias:")
+
+    market_products = []
+
+    for category in categories_list:
+        print(f"\nProcessando categoria: {category}")
         
-        if not os.path.exists("ifood_session.json"):
-            print("❌ Sessão não encontrada! Execute fazer_login() primeiro.")
-            browser.close()
-            return
+        try:
+            page.click(f".aisle-menu__item__link__name:has-text('{category}')", timeout=10000)
+            page.wait_for_selector(".product-card-wrapper", state="visible", timeout=10000)
+        except Exception:
+            print(f"  ⚠️ Categoria '{category}' sem produtos ou timeout. Pulando...")
+            continue
         
-        print("✅ Carregando sessão salva...")
-        context = browser.new_context(
-            storage_state="ifood_session.json",
-            user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            viewport={'width': 1920, 'height': 1080},
-            locale='pt-BR',
-            timezone_id='America/Sao_Paulo'
-        )
-        
-        page = context.new_page()
-        # Remove detecção de webdriver
-        page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-            Object.defineProperty(navigator, 'languages', {get: () => ['pt-BR', 'pt', 'en']});
-        """)
-        
-        print("Acessando iFood (já logado)...")
-        page.goto("https://www.ifood.com.br/mercados")
-
-        espera_humana(3, 5)
-
-
-        print("Esperando modal de endereços abrir...")
-        page.wait_for_selector(".address-modal-overlay--after-open", state="visible")
-        page.wait_for_selector(".address-list[data-test-id='address-list']", state="visible")
-        
-        
-        print("🎉 Você está logado!")
-        page.locator(f".btn-address__container:has-text('{ENDERECO}')").first.click()
-
-        page.wait_for_selector(".address-modal-overlay", state="hidden", timeout=5000)
-
-        print("Busca mercado...")
-        page.fill("input[data-test-id='search-input-field']", mercado_slug)
-        espera_humana(1, 2)
-
-        page.press("input[data-test-id='search-input-field']", "Enter")
-        espera_humana(2, 4)
-
-        print("Esperando resultados da busca...")
-        page.wait_for_selector(".merchant-list-v2__item-wrapper")
-
-        espera_humana(1, 2)
-
-        print("Clicando no primeiro resultado...")
-        page.locator(".merchant-v2__link").first.click()
-
-        print("Esperando produtos carregarem...")
-        page.wait_for_selector(".product-card-wrapper", state="visible")
-
-        print("Coletando categorias...")
-        categorias = page.locator(".aisle-menu__item__link__name").all()
-
-        categorias_lista = []
-        for i, cat in enumerate(categorias):
-            nome = cat.inner_text()
-            if i > 0:
-                categorias_lista.append(nome)
-
-        print(f"Encontradas {len(categorias_lista)} categorias:")
-
-        produtos_mercado = []
-
-        for categoria in categorias_lista:
-            print(f"\nProcessando categoria: {categoria}")
+        print("Carregando todos os produtos...")
+        previous_products_count = 0
+        while True:
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(2000)
             
-            page.click(f".aisle-menu__item__link__name:has-text('{categoria}')")
-            page.wait_for_selector(".product-card-wrapper", state="visible")
+            current_products_count = page.locator(".product-card-wrapper").count()
             
-            print("Carregando todos os produtos...")
-            produtos_anteriores = 0
-            while True:
-                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                page.wait_for_timeout(2000)
+            if current_products_count == previous_products_count:
+                break
+            
+            previous_products_count = current_products_count
+            print(f"  Carregados {current_products_count} produtos...")
+        
+        print(f"Total: {current_products_count} produtos. Coletando descontos...")
+        
+        discounted_products = page.evaluate("""
+            () => {
+                const produtos = [];
+                const cards = document.querySelectorAll('.product-card-wrapper');
                 
-                produtos_atuais = page.locator(".product-card-wrapper").count()
-                
-                if produtos_atuais == produtos_anteriores:
-                    break
-                
-                produtos_anteriores = produtos_atuais
-                print(f"  Carregados {produtos_atuais} produtos...")
-            
-            print(f"Total: {produtos_atuais} produtos. Coletando descontos...")
-            
-            produtos_com_desconto = page.evaluate("""
-                () => {
-                    const produtos = [];
-                    const cards = document.querySelectorAll('.product-card-wrapper');
+                cards.forEach(card => {
+                    const descontoEl = card.querySelector('.product-card__price--discount-percentage');
                     
-                    cards.forEach(card => {
-                        const descontoEl = card.querySelector('.product-card__price--discount-percentage');
+                    if (descontoEl) {
+                        const descontoTexto = descontoEl.textContent.trim();
+                        const desconto = parseInt(descontoTexto.replace('-', '').replace('%', ''));
                         
-                        if (descontoEl) {
-                            const descontoTexto = descontoEl.textContent.trim();
-                            const desconto = parseInt(descontoTexto.replace('-', '').replace('%', ''));
+                        if (desconto >= 24) {
+                            const nome = card.querySelector('.product-card__description')?.textContent.trim();
+                            const precoDesconto = card.querySelector('.product-card__price--discount')?.textContent.split('R$')[1]?.split('-')[0]?.trim();
                             
-                            if (desconto >= 24) {
-                                const nome = card.querySelector('.product-card__description')?.textContent.trim();
-                                const precoDesconto = card.querySelector('.product-card__price--discount')?.textContent.split('R$')[1]?.split('-')[0]?.trim();
-                                
-                                produtos.push({
-                                    nome: nome,
-                                    desconto: desconto,
-                                    precoDesconto: precoDesconto
-                                });
-                            }
+                            produtos.push({
+                                nome: nome,
+                                desconto: desconto,
+                                precoDesconto: precoDesconto
+                            });
                         }
-                    });
-                    
-                    return produtos;
-                }
-            """)
+                    }
+                });
+                
+                return produtos;
+            }
+        """)
 
-            produtos_mercado.extend(produtos_com_desconto)
-            
-            print(f"  Encontrados {len(produtos_com_desconto)} produtos com desconto >= 24%")
-            for p in produtos_com_desconto:
-                print(f"    - {p['nome']} ({colorir_desconto(p['desconto'])}) - R$ {p['precoDesconto']}")
+        market_products.extend(discounted_products)
+        
+        print(f"  Encontrados {len(discounted_products)} produtos com desconto >= 24%")
+        for p in discounted_products:
+            print(f"    - {p['nome']} ({color_discount(p['desconto'])}) - R$ {p['precoDesconto']}")
 
 
         
-        # page.pause()
+    # page.pause()
 
-        browser.close()
+    # browser.close()
 
-        return produtos_mercado
+    print("Voltando para lista de mercados...")
+    page.goto("https://www.ifood.com.br/mercados")
+    human_delay(2, 3)
+
+    return market_products
 
 
-def enviar_email(todos_produtos):
-    # Cria versão HTML
+def send_email(all_products):
     html = """
     <html>
     <head>
@@ -242,39 +195,39 @@ def enviar_email(todos_produtos):
         <h1>🛒 PRODUTOS COM DESCONTO >= 24%</h1>
     """
     
-    for mercado, produtos in todos_produtos.items():
-        html += f"<h2>🏪 {mercado.upper()}</h2>"
+    for store, store_products in all_products.items():
+        html += f"<h2>🏪 {store.upper()}</h2>"
         
-        if not produtos:
+        if not store_products:
             html += "<p>Nenhum produto encontrado</p>"
         else:
-            for p in produtos:
-                desconto = p['desconto']
+            for p in store_products:
+                discount_percentage = p['desconto']
                 
-                if 24 <= desconto < 33:
+                if 24 <= discount_percentage < 33:
                     cor_class = "desconto-laranja"
-                elif 33 <= desconto <= 40:
+                elif 33 <= discount_percentage <= 40:
                     cor_class = "desconto-vermelho"
                 else:
                     cor_class = "desconto-roxo"
                 
-                html += f'<div class="produto">- {p["nome"]} <span class="{cor_class}">{desconto}%</span> - R$ {p["precoDesconto"]}</div>'
+                html += f'<div class="produto">- {p["nome"]} <span class="{cor_class}">{discount_percentage}%</span> - R$ {p["precoDesconto"]}</div>'
     
     html += "</body></html>"
     
     msg = MIMEMultipart('alternative')
-    msg['From'] = EMAIL_REMETENTE
-    msg['To'] = EMAIL_DESTINATARIO
-    msg['Subject'] = f"Ofertas iFood - {len(todos_produtos)} mercados"
+    msg['From'] = EMAIL_SENDER
+    msg['To'] = EMAIL_RECEIVER
+    msg['Subject'] = f"Ofertas iFood - {len(all_products)} mercados"
     
     msg.attach(MIMEText(html, 'html', 'utf-8'))
     
     try:
-        servidor = smtplib.SMTP('smtp.gmail.com', 587)
-        servidor.starttls()
-        servidor.login(EMAIL_REMETENTE, EMAIL_SENHA)
-        servidor.send_message(msg)
-        servidor.quit()
+        smtp_server = smtplib.SMTP('smtp.gmail.com', 587)
+        smtp_server.starttls()
+        smtp_server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+        smtp_server.send_message(msg)
+        smtp_server.quit()
         print("\n✅ Email enviado com sucesso!")
     except Exception as e:
         print(f"\n❌ Erro ao enviar email: {e}")
@@ -287,30 +240,68 @@ if __name__ == "__main__":
         print("  scrape - Busca ofertas em um ou mais mercados")
         sys.exit(1)
     
-    comando = sys.argv[1]
+    action_command = sys.argv[1]
     
-    if comando == "login":
+    if action_command == "login":
         do_login()
-    elif comando == "scrape":
+    elif action_command == "scrape":
         if len(sys.argv) < 3:
-            print("❌ Erro: Nome do mercado obrigatório para scrape")
-            print("Exemplo: python scraper.py scrape \"extra bernardino\" \"daki mercado\"")
+            print("❌ Erro: Nome do mercado obrigatório")
             sys.exit(1)
         
-        mercados = sys.argv[2:]
-        todos_produtos = {}
+        stores = sys.argv[2:]
+        all_products = {}
         
-        print(f"🛒 Processando {len(mercados)} mercado(s)...")
+        print(f"🛒 Processando {len(stores)} mercado(s)...")
         
-        for i, mercado_nome in enumerate(mercados, 1):
-            if i > 1:
-                print(f"\n⏳ Aguardando x segundos antes do próximo mercado...")
-                time.sleep(8)
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=False,
+                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+                slow_mo=random.randint(200, 500),
+                args=['--disable-blink-features=AutomationControlled']
+            )
+            
+            context = browser.new_context(
+                storage_state="ifood_session.json",
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                viewport={'width': 1920, 'height': 1080},
+                locale='pt-BR',
+                timezone_id='America/Sao_Paulo'
+            )
+            
+            page = context.new_page()
+            page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+                Object.defineProperty(navigator, 'languages', {get: () => ['pt-BR', 'pt', 'en']});
+            """)
+            
+            
+            
+            # Loop pelos mercados
+            for i, store_name in enumerate(stores, 1):
+                page.goto("https://www.ifood.com.br/restaurantes")
+                human_delay(3, 5)
 
-            print(f"\n[{i}/{len(mercados)}] {mercado_nome}")
-            produtos = scrape_ofertas(mercado_nome)
-            todos_produtos[mercado_nome] = produtos
-
-        enviar_email(todos_produtos)
+                print(f"\n{'='*60}")
+                print(f"[{i}/{len(stores)}] {store_name}")
+                print('='*60)
+                
+                # Seleciona endereço
+                if i == 1:
+                    page.wait_for_selector(".address-modal-overlay--after-open", state="visible")
+                    page.locator(f".btn-address__container:has-text('{ADDRESS}')").first.click()
+                    page.wait_for_selector(".address-modal-overlay", state="hidden", timeout=5000)
+                else:
+                    human_delay(5, 8)
+                
+                # Scrape o mercado
+                products = scrape_offers(page, store_name)
+                all_products[store_name] = products
+            
+            # browser.close()
+        
+        send_email(all_products)
     else:
         print("Comando inválido. Use 'login' ou 'scrape'")
